@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Calculadora de Stock de Seguridad</title>
+  <style>
+    :root {
+      --bg: #f5f7fa;
+      --card: #ffffff;
+      --text: #1f2933;
+      --muted: #616e7c;
+      --border: #d9e2ec;
+      --accent: #2563eb;
+      --accent-soft: #eff4ff;
+      --error: #c81e1e;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.5;
+      padding: 32px 16px;
+    }
+    .contenedor {
+      max-width: 560px;
+      margin: 0 auto;
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 28px;
+      box-shadow: 0 4px 16px rgba(15, 23, 42, 0.05);
+    }
+    h1 { font-size: 1.5rem; margin: 0 0 4px; }
+    .subtitulo { color: var(--muted); margin: 0 0 24px; font-size: 0.95rem; }
+    .campo { margin-bottom: 16px; }
+    label { display: block; font-weight: 600; font-size: 0.9rem; margin-bottom: 6px; }
+    input, select {
+      width: 100%;
+      padding: 10px 12px;
+      font-size: 1rem;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: #fff;
+      color: var(--text);
+    }
+    input:focus, select:focus {
+      outline: none;
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px var(--accent-soft);
+    }
+    .ayuda { font-size: 0.8rem; color: var(--muted); margin-top: 4px; }
+    button {
+      width: 100%;
+      padding: 12px;
+      font-size: 1rem;
+      font-weight: 600;
+      color: #fff;
+      background: var(--accent);
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      margin-top: 8px;
+    }
+    button:hover { filter: brightness(0.95); }
+    .error { color: var(--error); font-size: 0.9rem; margin-top: 12px; min-height: 1.2em; }
+    .resultados {
+      display: none;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+      margin-top: 20px;
+    }
+    .resultados.visible { display: grid; }
+    .tarjeta {
+      background: var(--accent-soft);
+      border-radius: 10px;
+      padding: 16px;
+      text-align: center;
+    }
+    .tarjeta .etiqueta { font-size: 0.85rem; color: var(--muted); }
+    .tarjeta .valor { font-size: 1.8rem; font-weight: 700; color: var(--accent); }
+    .tarjeta .unidad { font-size: 0.8rem; color: var(--muted); }
+    .detalle {
+      grid-column: 1 / -1;
+      font-size: 0.85rem;
+      color: var(--muted);
+      border-top: 1px solid var(--border);
+      padding-top: 12px;
+    }
+    .detalle code { background: #f1f5f9; padding: 1px 4px; border-radius: 4px; }
+    @media (max-width: 480px) {
+      .resultados { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <main class="contenedor">
+    <h1>Calculadora de Stock de Seguridad</h1>
+    <p class="subtitulo">Calcula el stock de seguridad y el punto de reorden con lead time fijo.</p>
+
+    <form id="formulario" novalidate>
+      <div class="campo">
+        <label for="demanda">Demanda diaria promedio (unidades)</label>
+        <input type="number" id="demanda" min="0" step="any" placeholder="Ej: 120" required>
+      </div>
+      <div class="campo">
+        <label for="desviacion">Desviación estándar de la demanda diaria (unidades)</label>
+        <input type="number" id="desviacion" min="0" step="any" placeholder="Ej: 25" required>
+      </div>
+      <div class="campo">
+        <label for="leadtime">Lead time (días)</label>
+        <input type="number" id="leadtime" min="0" step="any" placeholder="Ej: 9" required>
+      </div>
+      <div class="campo">
+        <label for="servicio">Nivel de servicio</label>
+        <select id="servicio">
+          <option value="1.2816">90%</option>
+          <option value="1.6449" selected>95%</option>
+          <option value="2.3263">99%</option>
+        </select>
+        <div class="ayuda">Probabilidad de no quebrar stock durante el lead time.</div>
+      </div>
+      <button type="submit">Calcular</button>
+      <div class="error" id="error" role="alert"></div>
+    </form>
+
+    <section class="resultados" id="resultados" aria-live="polite">
+      <div class="tarjeta">
+        <div class="etiqueta">Stock de seguridad</div>
+        <div class="valor" id="ss">–</div>
+        <div class="unidad">unidades</div>
+      </div>
+      <div class="tarjeta">
+        <div class="etiqueta">Punto de reorden</div>
+        <div class="valor" id="rop">–</div>
+        <div class="unidad">unidades</div>
+      </div>
+      <div class="detalle" id="detalle"></div>
+    </section>
+  </main>
+
+  <script>
+    const formato = new Intl.NumberFormat('es', { maximumFractionDigits: 0 });
+    const formato2 = new Intl.NumberFormat('es', { maximumFractionDigits: 2 });
+
+    document.getElementById('formulario').addEventListener('submit', function (e) {
+      e.preventDefault();
+      const d = parseFloat(document.getElementById('demanda').value);
+      const sigma = parseFloat(document.getElementById('desviacion').value);
+      const lt = parseFloat(document.getElementById('leadtime').value);
+      const z = parseFloat(document.getElementById('servicio').value);
+      const error = document.getElementById('error');
+      const resultados = document.getElementById('resultados');
+
+      if ([d, sigma, lt].some(v => isNaN(v) || v < 0)) {
+        error.textContent = 'Completa todos los campos con valores numéricos mayores o iguales a 0.';
+        resultados.classList.remove('visible');
+        return;
+      }
+      error.textContent = '';
+
+      // SS = Z × σd × √LT ; ROP = d × LT + SS
+      const ss = z * sigma * Math.sqrt(lt);
+      const demandaLT = d * lt;
+      const rop = demandaLT + ss;
+
+      document.getElementById('ss').textContent = formato.format(Math.ceil(ss));
+      document.getElementById('rop').textContent = formato.format(Math.ceil(rop));
+      document.getElementById('detalle').innerHTML =
+        'Fórmulas: <code>SS = Z × σ × √LT</code> y <code>ROP = d × LT + SS</code><br>' +
+        'Z = ' + formato2.format(z) +
+        ' · Demanda durante el lead time = ' + formato2.format(demandaLT) +
+        ' · SS sin redondear = ' + formato2.format(ss) +
+        '<br>Resultados redondeados hacia arriba.';
+      resultados.classList.add('visible');
+    });
+  </script>
+</body>
+</html>
